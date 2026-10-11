@@ -1,0 +1,123 @@
+
+name: Create Azure Resource Group
+on:
+  push:
+    branches:
+      - main
+      - 'features/**'
+
+  workflow_dispatch:
+  
+permissions:
+  contents: read
+
+
+env:
+  ARM_CLIENT_ID: ${{ fromJSON(secrets.my_secret).clientId }}
+  ARM_CLIENT_SECRET: ${{ fromJSON(secrets.my_secret).clientSecret }}
+  ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.my_secret).subscriptionId }}
+  ARM_TENANT_ID: ${{ fromJSON(secrets.my_secret).tenantId }}
+
+jobs:
+
+  
+  terraform_plan:
+
+    name: Terraform Plan Job
+
+   
+    runs-on: windows-latest
+
+   
+    steps:
+
+      
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+   
+      - name: Terraform Installer
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+
+      # STEP 3 - AZURE LOGIN
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.my_secret }}
+
+      # STEP 4 - TERRAFORM INIT
+      - name: Terraform Init
+        working-directory: ./dev
+        run: terraform init
+
+      # STEP 5 - TERRAFORM VALIDATE
+      - name: Terraform Validate
+        working-directory: ./dev
+        run: terraform validate
+
+      # STEP 6 - TERRAFORM PLAN
+      - name: Terraform Plan
+        working-directory: ./dev
+        run: terraform plan -out=tfplan
+
+      # STEP 7 - UPLOAD PLAN
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: dev/tfplan
+          retention-days: 1
+
+  # ======================================
+  # JOB 2 - TERRAFORM APPLY
+  # ======================================
+  terraform_apply:
+
+    name: Terraform Apply Job
+
+    # DEPENDENCY
+    needs: terraform_plan
+
+    # AGENT
+    runs-on: windows-latest
+
+    # MANUAL APPROVAL ENVIRONMENT
+    environment: production
+
+    # STEPS
+    steps:
+
+      # STEP 1 - CHECKOUT
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # STEP 2 - TERRAFORM INSTALL
+      - name: Terraform Installer
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+
+      # STEP 3 - AZURE LOGIN
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.my_secret }}
+
+      # STEP 4 - TERRAFORM INIT
+      - name: Terraform Init
+        working-directory: ./dev
+        run: terraform init
+
+      # STEP 5 - DOWNLOAD PLAN
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: dev
+
+      # STEP 6 - TERRAFORM APPLY
+      - name: Terraform Apply
+        working-directory: ./dev
+        run: terraform apply -auto-approve tfplan
